@@ -5,18 +5,39 @@
    [clojure.java.io :as io]
    [guestbook.middleware :as middleware]
    [ring.util.response]
-   [ring.util.http-response :as response]))
+   [ring.util.http-response :as response]
+   [struct.core :as st]))
 
-(defn home-page [request]
+(def message-schema
+  [[:name
+    st/required
+    st/string]
+   [:message
+    st/required
+    st/string
+    {:message "message must contain at lest 10 characters"
+     :validate (fn [msg] (>= (count msg) 10))}]])
+
+(defn validate-message [params]
+  (first (st/validate params message-schema)))
+
+(defn home-page [{:keys [flash] :as request}]
   (layout/render
-   request "home.html" {:messages (db/get-messages)}))
+   request
+   "home.html"
+   (merge {:messages (db/get-messages)}
+          (select-keys flash [:name :message :errors]))))
 
 (defn about-page [request]
   (layout/render request "about.html"))
 
 (defn save-message! [{:keys [params]}]
-  (db/save-message! params)
-  (response/found "/"))
+  (if-let [errors (validate-message params)]
+    (-> (response/found "/")
+        (assoc :flash (assoc params :errors errors)))
+    (do
+      (db/save-message! params)
+      (response/found "/"))))
 
 (defn home-routes []
   [""
